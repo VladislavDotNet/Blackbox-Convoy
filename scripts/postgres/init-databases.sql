@@ -1,0 +1,1 @@
+CREATE DATABASE convoy_airflow;
