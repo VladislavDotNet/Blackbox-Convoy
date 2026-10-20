@@ -1,0 +1,90 @@
+
+name: ETL CI Pipeline  # Имя пайплайна, которое будет отображаться в UI GitHub Actions
+
+on:  # Ключевое слово для определения триггеров
+  push:  # Запускать при пуше кода в репозиторий
+    branches: [ "main", "master" ]  # Только для главных веток (защита продакшена)
+  pull_request:  # Запускать при создании Pull Request (для код-ревью)
+    branches: [ "main", "master" ]  # Проверяем PRы, которые мержатся в главные ветки
+
+# --- БЛОК 2: ОПРЕДЕЛЕНИЕ ЗАДАЧ (JOBS) ---
+# Назначение: Описание изолированных сред (виртуальных машин), где будут выполняться шаги.
+jobs:
+
+  # --- ЗАДАЧА 1: ПРОВЕРКА КОДА И UNIT-ТЕСТЫ (PYTHON) ---
+  # Назначение: Линтинг (flake8/black) и запуск pytest.
+  lint-and-test:
+    name: Lint & Pytest  # Отображаемое имя задачи в UI
+    runs-on: ubuntu-latest  # Используем последнюю версию Ubuntu в качестве раннера (виртуальной машины)
+
+    steps:  # Список шагов, которые выполняются последовательно
+      # Шаг 1: Скачивание кода
+      - name: Checkout repository  # Название шага (видно в логах)
+        uses: actions/checkout@v3  # Стандартный экшн GitHub для клонирования репозитория в раннер
+
+      # Шаг 2: Установка Python
+      - name: Set up Python 3.10  # Название шага
+        uses: actions/setup-python@v4  # Стандартный экшн для установки Python
+        with:
+          python-version: '3.10'  # Версия Python (должна совпадать с твоим проектом)
+          cache: 'pip'  # Включаем кэширование pip для ускорения последующих запусков
+
+      # Шаг 3: Установка зависимостей
+      - name: Install dependencies  # Название шага
+        run: |  # Ключевое слово run означает выполнение bash-команд
+          python -m pip install --upgrade pip  # Обновляем pip
+          pip install -r requirements.txt  # Устанавливаем основные зависимости
+          pip install -r requirements-dev.txt  # Устанавливаем dev-зависимости (pytest, flake8)
+
+      # Шаг 4: Линтинг кода (проверка стиля)
+      - name: Lint with flake8  # Название шага
+        run: |
+          # Останавливаем сборку, если flake8 найдет ошибки. 
+          # --max-line-length=100 совпадает с настройками в pyproject.toml
+          flake8 src/ tests/ --max-line-length=100 --statistics
+
+      # Шаг 5: Запуск unit-тестов
+      - name: Test with pytest  # Название шага
+        run: |
+          # Запускаем тесты с подробным выводом (-v) и замером покрытия (--cov)
+          pytest tests/ -v --cov=src --cov-report=xml
+
+      # Шаг 6: Загрузка отчета о покрытии (опционально, но полезно)
+      - name: Upload coverage report  # Название шага
+        uses: actions/upload-artifact@v3  # Экшн для сохранения файлов артефактов
+        with:
+          name: coverage-report  # Имя артефакта
+          path: coverage.xml  # Путь к файлу отчета
+
+  # --- ЗАДАЧА 2: ТЕСТЫ КАЧЕСТВА ДАННЫХ (DBT) ---
+  # Назначение: Запуск dbt test для проверки целостности моделей и данных.
+  # Примечание: Для работы требует настроенного профиля dbt и доступной БД.
+  # В реальном CI/CD здесь поднимают тестовую БД через docker-compose.
+  dbt-tests:
+    name: dbt Quality Tests  # Отображаемое имя задачи
+    runs-on: ubuntu-latest
+    needs: lint-and-test  # ЗАВИСИМОСТЬ: Эта задача запустится ТОЛЬКО если lint-and-test прошла успешно
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dbt and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Устанавливаем dbt-core и адаптер для ClickHouse (или postgres)
+          pip install dbt-core dbt-clickhouse 
+
+      - name: Run dbt tests
+        run: |
+          # Переходим в папку dbt
+          cd dbt
+          # Запускаем тесты. 
+          # В реальном проекте здесь нужно будет передать креды БД через секреты GitHub (secrets)
+          # dbt test --target prod
+          echo "Запуск dbt тестов (заглушка, так как нет живой БД в CI)"

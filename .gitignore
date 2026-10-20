@@ -1,0 +1,56 @@
+# === Секреты и окружение ===
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# === Python: виртуальные окружения ===
+.venv/
+venv/
+env/
+ENV/
+
+# === Python: байткод и артефакты сборки ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+build/
+dist/
+
+# === IDE ===
+.idea/
+.vscode/
+*.iml
+
+# === Логи ===
+logs/
+airflow_logs/
+*.log
+
+# === Данные: тяжёлое живёт в DVC/MinIO, не в git ===
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/**/*.parquet
+data/**/*.csv
+*.tar.zst
+*.zst
+*.db
+*.sqlite3
+
+# === Ноутбуки ===
+.ipynb_checkpoints/
+
+# === Тесты и покрытие ===
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# === Мусор ОС ===
+Thumbs.db
+Desktop.ini
+.DS_Store

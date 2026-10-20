@@ -1,0 +1,56 @@
+version: '3.8'  # Версия синтаксиса Docker Compose (3.8 поддерживает все современные фичи)
+
+# --- БЛОК 1: ОПРЕДЕЛЕНИЕ СЕРВИСОВ (КОНТЕЙНЕРОВ) ---
+services:
+
+  # --- Сервис 1: PostgreSQL (Source / Raw Layer) ---
+  postgres:
+    image: postgres:15-alpine  # Используем легковесный Alpine образ PostgreSQL 15
+    container_name: etl_postgres  # Фиксированное имя контейнера (удобно для логов и подключений)
+    restart: unless-stopped  # Автоматически перезапускать контейнер, если он упал (кроме случаев ручного стопа)
+    environment:  # Переменные окружения, которые требует официальный образ Postgres
+      POSTGRES_USER: postgres  # Имя суперпользователя БД
+      POSTGRES_PASSWORD: postgres  # Пароль суперпользователя (в проде менять на сложный!)
+      POSTGRES_DB: ecommerce_source  # Название базы данных, которая создастся при первом запуске
+    ports:
+      - "5432:5432"  # Пробрасываем порт: [порт на хосте]:[порт внутри контейнера]. Нужно для подключения из PyCharm/DBeaver
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Монтируем том для сохранения данных БД между перезапусками контейнера
+      - ./scripts/setup_db.sql:/docker-entrypoint-initdb.d/init.sql  # Автоматически выполняем наш SQL скрипт при ПЕРВОМ запуске БД
+    healthcheck:  # Проверка готовности БД (нужно для зависимостей других сервисов)
+      test: ["CMD-SHELL", "pg_isready -U postgres"]  # Команда для проверки (pg_isready - утилита Postgres)
+      interval: 10s  # Проверять каждые 10 секунд
+      timeout: 5s  # Таймаут на выполнение проверки
+      retries: 5  # Количество попыток перед признанием сервиса "unhealthy"
+
+  # --- Сервис 2: ClickHouse (Target / Analytics Layer) ---
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8  # Официальный образ ClickHouse (версия 23.8 - стабильная)
+    container_name: etl_clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"  # HTTP интерфейс (для UI, библиотек типа pandas, dbt)
+      - "9000:9000"  # Нативный TCP интерфейс (для clickhouse-driver, максимальная скорость)
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse  # Том для данных ClickHouse
+      - clickhouse_logs:/var/log/clickhouse-server  # Том для логов ClickHouse
+    ulimits:  # Настройка лимитов ОС (ClickHouse требует много открытых файловых дескрипторов)
+      nofile:
+        soft: 262144  # Мягкий лимит
+        hard: 262144  # Жесткий лимит
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]  # Выполняем SELECT 1 через встроенный клиент
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# --- БЛОК 2: ОПРЕДЕЛЕНИЕ ТОМОВ (VOLUMES) ---
+# Назначение: Объявление именованных томов для персистентного хранения данных.
+# Если не объявить здесь, Docker создаст их автоматически, но явное объявление - best practice.
+volumes:
+  postgres_data:  # Том для PostgreSQL (данные не удалятся при docker-compose down)
+    driver: local  # Используем локальный драйвер хранения (файлы на диске хоста)
+  clickhouse_data:  # Том для данных ClickHouse
+    driver: local
+  clickhouse_logs:  # Том для логов ClickHouse
+    driver: local

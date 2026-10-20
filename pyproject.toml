@@ -1,0 +1,29 @@
+
+# --- Настройки сборки проекта ---
+[build-system]  # Секция для систем сборки (pip, poetry, etc.)
+requires = ["setuptools>=61.0", "wheel"]  # Какие библиотеки нужны для сборки
+build-backend = "setuptools.build_meta"  # Какой бэкенд использовать
+
+# --- Метаданные проекта ---
+[project]  # Основная информация о пакете
+name = "ecommerce_etl"  # Название проекта
+version = "0.1.0"  # Текущая версия (семантическое версионирование)
+description = "ETL пайплайн для e-commerce данных"  # Краткое описание
+requires-python = ">=3.9"  # Минимальная требуемая версия Python
+authors = [  # Авторы проекта
+    {name = "Владислав", email = "your_email@example.com"}
+]
+
+# --- Настройки инструментов (Tools) ---
+
+# Настройка Black (форматирование кода)
+[tool.black]
+line-length = 100  # Максимальная длина строки (стандарт 88, но 100 удобнее для SQL/данных)
+target-version = ['py39']  # Целевая версия Python
+
+# Настройка Pytest (тестирование)
+[tool.pytest.ini_options]
+testpaths = ["tests"]  # Где искать тесты
+python_files = ["test_*.py"]  # Маска имен файлов с тестами
+python_functions = ["test_*"]  # Маска имен функций с тестами
+addopts = "-v --tb=short"  # Аргументы по умолчанию (подробный вывод, короткий трейсбек)
