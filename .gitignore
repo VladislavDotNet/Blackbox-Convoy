@@ -31,12 +31,14 @@ airflow_logs/
 
 # === Данные: тяжёлое живёт в DVC/MinIO, не в git ===
 data/raw/*
+!data/raw/*.dvc
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
 data/**/*.parquet
 data/**/*.csv
 *.tar.zst
+*.tar
 *.zst
 *.db
 *.sqlite3
