@@ -17,48 +17,63 @@ def load_silver_manifest():
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Добавляет фичи для ML-модели предсказания движения.
-    Работает с траекториями агентов (x, y координаты во времени).
+    Добавляет фичи для ML с учётом пропусков и частоты сенсора (10 Гц).
     """
-    # === ПРОИЗВОДНЫЕ ПРИЗНАКИ ===
-
-    # 1. Скорость (первая производная позиции)
+    # Частота записи AV2: 10 Гц = 0.1 сек между замерами
+    DT = 0.1
+    
+    # === ОЧИСТКА ===
+    df = df.drop_duplicates()
+    df = df.dropna(how='all')
+    df.columns = [col.lower() for col in df.columns]
+    
+    # === СКОРОСТЬ И УСКОРЕНИЕ (только между соседними наблюдаемыми шагами) ===
     if 'position_x' in df.columns and 'position_y' in df.columns:
-        df['velocity_x'] = df['position_x'].diff()
-        df['velocity_y'] = df['position_y'].diff()
-
-        # Модуль скорости
-        df['speed'] = np.sqrt(df['velocity_x'] ** 2 + df['velocity_y'] ** 2)
-
-        # 2. Ускорение (вторая производная)
-        df['acceleration_x'] = df['velocity_x'].diff()
-        df['acceleration_y'] = df['velocity_y'].diff()
-        df['acceleration'] = np.sqrt(df['acceleration_x'] ** 2 + df['acceleration_y'] ** 2)
-
-        # 3. Yaw rate (изменение направления)
+        # Проверяем, есть ли timestep и observed
+        has_timestep = 'timestep' in df.columns
+        has_observed = 'observed' in df.columns
+        
+        # Маска: соседние шаги И оба наблюдаемые
+        if has_timestep and has_observed:
+            consecutive = (df['timestep'].diff() == 1) & (df['observed'] == True) & (df['observed'].shift(1) == True)
+        else:
+            # Fallback: просто соседние шаги
+            consecutive = pd.Series([True] * len(df), index=df.index)
+        
+        # Считаем diff только для последовательных наблюдаемых точек
+        df['velocity_x'] = np.where(consecutive, df['position_x'].diff() / DT, np.nan)
+        df['velocity_y'] = np.where(consecutive, df['position_y'].diff() / DT, np.nan)
+        df['speed'] = np.sqrt(df['velocity_x']**2 + df['velocity_y']**2)
+        
+        # Ускорение
+        df['acceleration_x'] = np.where(consecutive, df['velocity_x'].diff() / DT, np.nan)
+        df['acceleration_y'] = np.where(consecutive, df['velocity_y'].diff() / DT, np.nan)
+        df['acceleration'] = np.sqrt(df['acceleration_x']**2 + df['acceleration_y']**2)
+        
+        # Yaw rate
         if 'heading' in df.columns:
-            df['yaw_rate'] = df['heading'].diff()
-
-    # === АГРЕГАЦИИ НА УРОВНЕ СЦЕНАРИЯ ===
-
-    # 4. Статистики траектории
+            df['yaw_rate'] = np.where(consecutive, df['heading'].diff() / DT, np.nan)
+    
+    # === АГРЕГАЦИИ (NaN-safe) ===
     if 'speed' in df.columns:
         df['mean_speed'] = df['speed'].mean()
         df['max_speed'] = df['speed'].max()
         df['std_speed'] = df['speed'].std()
-
+    
     if 'acceleration' in df.columns:
         df['mean_acceleration'] = df['acceleration'].mean()
         df['max_acceleration'] = df['acceleration'].max()
-
-    # 5. Длительность сценария (если есть timestamp)
+    
     if 'timestamp' in df.columns:
         df['duration_sec'] = df['timestamp'].max() - df['timestamp'].min()
-
-    # 6. Количество уникальных агентов (если есть agent_id)
+    
     if 'agent_id' in df.columns:
         df['agent_count'] = df['agent_id'].nunique()
-
+    
+    # Добавляем метаданные
+    df['source_file'] = ''  # заполнится в цикле обработки
+    df['processed_timestamp'] = datetime.now(timezone.utc).isoformat()
+    
     return df
 
 
