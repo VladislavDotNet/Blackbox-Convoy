@@ -17,63 +17,55 @@ def load_silver_manifest():
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Добавляет фичи для ML с учётом пропусков и частоты сенсора (10 Гц).
+    Фичи для ML: скорость/ускорение только между соседними наблюдаемыми
+    шагами ОДНОГО трека, с учётом частоты сенсора 10 Гц.
     """
-    # Частота записи AV2: 10 Гц = 0.1 сек между замерами
-    DT = 0.1
-    
-    # === ОЧИСТКА ===
+    DT = 0.1  # 10 Гц
+
     df = df.drop_duplicates()
     df = df.dropna(how='all')
-    df.columns = [col.lower() for col in df.columns]
-    
-    # === СКОРОСТЬ И УСКОРЕНИЕ (только между соседними наблюдаемыми шагами) ===
-    if 'position_x' in df.columns and 'position_y' in df.columns:
-        # Проверяем, есть ли timestep и observed
-        has_timestep = 'timestep' in df.columns
-        has_observed = 'observed' in df.columns
-        
-        # Маска: соседние шаги И оба наблюдаемые
-        if has_timestep and has_observed:
-            consecutive = (df['timestep'].diff() == 1) & (df['observed'] == True) & (df['observed'].shift(1) == True)
-        else:
-            # Fallback: просто соседние шаги
-            consecutive = pd.Series([True] * len(df), index=df.index)
-        
-        # Считаем diff только для последовательных наблюдаемых точек
-        df['velocity_x'] = np.where(consecutive, df['position_x'].diff() / DT, np.nan)
-        df['velocity_y'] = np.where(consecutive, df['position_y'].diff() / DT, np.nan)
-        df['speed'] = np.sqrt(df['velocity_x']**2 + df['velocity_y']**2)
-        
-        # Ускорение
-        df['acceleration_x'] = np.where(consecutive, df['velocity_x'].diff() / DT, np.nan)
-        df['acceleration_y'] = np.where(consecutive, df['velocity_y'].diff() / DT, np.nan)
+    df.columns = [c.lower() for c in df.columns]
+
+    needed = {'position_x', 'position_y', 'track_id', 'timestep', 'observed'}
+    if needed <= set(df.columns):
+        # Сортируем: трек -> время. Иначе diff прыгает между треками
+        df = df.sort_values(['track_id', 'timestep']).reset_index(drop=True)
+        g = df.groupby('track_id', sort=False)
+
+        # Маска валидности: соседний timestep ВНУТРИ трека + оба шага наблюдались
+        dt_ok = g['timestep'].diff() == 1
+        obs_now = df['observed'].astype(bool)
+        obs_prev = g['observed'].shift(1).eq(True)
+        valid = dt_ok & obs_now & obs_prev
+
+        # Скорость: расстояние между соседними точками трека / DT
+        vx = np.where(valid, g['position_x'].diff() / DT, np.nan)
+        vy = np.where(valid, g['position_y'].diff() / DT, np.nan)
+        df['velocity_x'] = vx
+        df['velocity_y'] = vy
+        df['speed'] = np.sqrt(vx**2 + vy**2)
+
+        # Ускорение и yaw rate: diff уже посчитанных скоростей, тоже внутри трека
+        g = df.groupby('track_id', sort=False)
+        df['acceleration_x'] = np.where(valid, g['velocity_x'].diff() / DT, np.nan)
+        df['acceleration_y'] = np.where(valid, g['velocity_y'].diff() / DT, np.nan)
         df['acceleration'] = np.sqrt(df['acceleration_x']**2 + df['acceleration_y']**2)
-        
-        # Yaw rate
         if 'heading' in df.columns:
-            df['yaw_rate'] = np.where(consecutive, df['heading'].diff() / DT, np.nan)
-    
-    # === АГРЕГАЦИИ (NaN-safe) ===
+            df['yaw_rate'] = np.where(valid, g['heading'].diff() / DT, np.nan)
+
+    # Агрегаты (NaN игнорируются автоматически)
     if 'speed' in df.columns:
         df['mean_speed'] = df['speed'].mean()
         df['max_speed'] = df['speed'].max()
         df['std_speed'] = df['speed'].std()
-    
     if 'acceleration' in df.columns:
         df['mean_acceleration'] = df['acceleration'].mean()
         df['max_acceleration'] = df['acceleration'].max()
-    
     if 'timestamp' in df.columns:
         df['duration_sec'] = df['timestamp'].max() - df['timestamp'].min()
-    
     if 'agent_id' in df.columns:
         df['agent_count'] = df['agent_id'].nunique()
-    
-    # Добавляем метаданные
-    df['source_file'] = ''  # заполнится в цикле обработки
-    df['processed_timestamp'] = datetime.now(timezone.utc).isoformat()
-    
+
     return df
 
 
