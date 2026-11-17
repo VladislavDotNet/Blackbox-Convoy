@@ -21,6 +21,15 @@ data/gold/     фичи для ML + manifest.parquet
 ClickHouse, таблица av2_gold_scenarios (~71.7 млн строк, 3.3 ГиБ)
   │  scripts/clickhouse_analytics.py — агрегаты, топ-сценарии, DQ-сводки
   ▼
+    │  scripts/embed_scenarios.py — векторизация (40D: агрегаты + форма траектории)
+  ▼
+data/vectors/scenarios.parquet (24 988 векторов)
+  │  scripts/load_to_qdrant.py — загрузка в Qdrant
+  ▼
+Qdrant, коллекция av2_scenarios (40D, Cosine)
+  │  scripts/search_similar_scenarios.py — поиск похожих сценариев
+  ▼
+edge-case mining: топ-K похожих сценариев для ML
 аналитика / (далее: Qdrant — векторный поиск похожих сценариев)
 
 ## Компоненты и их роли
@@ -40,6 +49,9 @@ ClickHouse, таблица av2_gold_scenarios (~71.7 млн строк, 3.3 Ги
   а в venv на хосте (упаковка ETL в образ — осознанно не сделано, см. «улучшить»).
 - **.wslconfig** — ресурсы WSL2-машины (RAM/CPU), внутри которой живёт Docker на Windows.
 - **.venv + requirements.txt (пины)** — воспроизводимость Python-окружения.
+- - **Qdrant (docker-compose, порт 6337)** — векторная БД для similarity search.
+  Хранит 40D эмбеддинги сценариев + payload (city, max_speed, n_tracks).
+  Поиск по cosine similarity через HNSW-индекс.
 
 ## Три урока проекта
 
